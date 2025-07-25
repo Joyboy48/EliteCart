@@ -1,4 +1,4 @@
-# Studio Projects
+# EliteCart
 
 A modern Flutter-based e-commerce mobile application frontend, designed to work with a Node.js/Express backend. This project demonstrates best practices in Flutter development, state management, API integration, and Firebase authentication.
 
