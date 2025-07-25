@@ -85,7 +85,7 @@ Studio Projects is a full-stack e-commerce solution featuring a modern Flutter-b
 ---
 1. **Clone the repository:**
    ```sh
-   git clone https://github.com/yourusername/studio_projects.git
+   git clone https://https://github.com/Joyboy48/EliteCart.git
    cd studio_projects/FE
    ```
 2. **Install dependencies:**
