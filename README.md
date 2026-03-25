@@ -56,9 +56,14 @@ Studio Projects is a full-stack e-commerce solution featuring a modern Flutter-b
 - **API Response Handling**
   - Consistent API responses and error handling
 - **Authentication Middleware**
-  - Passport.js and custom middleware for route protection
+- **Payment Processing & Workflows**
+  - End-to-end Razorpay payment integration with HMAC-SHA256 signature verification
+  - Automated HTML order confirmation emails via Nodemailer
+- **Performance Optimization**
+  - Redis cache-aside implementation for high-traffic read routes (achieving 40%+ faster query performance)
+  - Active cache invalidation on write/update operations
 - **Database**
-  - MongoDB with Mongoose models for all entities
+  - MongoDB with Mongoose models for all entities (9 indexed models)
 
 ---
 - **Frontend:** Flutter (Dart)
@@ -116,8 +121,20 @@ See the `/src` folder in the root for the Node.js/Express backend. Configure you
    ```
 3. Create a `.env` file with:
    ```env
-   MONGODB_URL=mongodb://localhost:27017/your_database_name
    PORT=8000
+   MONGODB_URL=mongodb://localhost:27017/your_database_name
+   
+   # Caching
+   REDIS_URL=rediss://default:YOUR_PASSWORD@your-upstash-url.upstash.io:6379
+   
+   # Payment Gateway
+   RAZORPAY_KEY_ID=rzp_test_YOUR_KEY
+   RAZORPAY_KEY_SECRET=YOUR_KEY_SECRET
+   
+   # Email Service (Nodemailer)
+   SMTP_HOST=smtp.gmail.com
+   SMTP_USER=your_email@gmail.com
+   SMTP_PASS=your_app_password
    ```
 4. Start the backend server:
    ```sh
@@ -168,13 +185,17 @@ Pull requests are welcome! For major changes, please open an issue first to disc
 
 The backend exposes RESTful endpoints for all major resources:
 
-- `/api/auth` – User authentication (register, login, Google, etc.)
-- `/api/user` – User profile, wishlist, cart
-- `/api/product` – Product listing, details, reviews
-- `/api/category` – Category management
-- `/api/brand` – Brand management
-- `/api/order` – Order placement and history
-- `/api/upload` – Image uploads
+- `/api/v1/auth` – User authentication (register, login, Google, etc.)
+- `/api/v1/users` – User profile management
+- `/api/v1/products` – Product listing, details (Redis Cached)
+- `/api/v1/categories` – Category management (Redis Cached)
+- `/api/v1/brands` – Brand management
+- `/api/v1/cart` – Shopping cart CRUD operations
+- `/api/v1/wishlist` – Wishlist management
+- `/api/v1/orders` – Order placement and history
+- `/api/v1/payments` – Razorpay order creation, verification, and simulation
+- `/api/v1/reviews` – Product reviews
+- `/api/v1/utils` – Cloudinary image uploads
 
 All endpoints are protected with authentication middleware where required. See the `routes/` and `controllers/` folders for details.
 

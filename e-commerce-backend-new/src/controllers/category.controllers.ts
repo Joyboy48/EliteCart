@@ -4,6 +4,10 @@ import apiError  from '../utils/apiError.js';
 import { uploadOnCloudinary } from '../utils/cloudinary.js';
 import { Request, Response } from 'express';
 import { Document } from 'mongoose';
+import { getCache, setCache, deleteCache } from '../utils/redis.js';
+
+const CATEGORIES_CACHE_KEY = "categories:all";
+const CATEGORIES_CACHE_TTL = 3600; // 1 hour
 
 interface ICategory {
     _id: string;
@@ -39,23 +43,34 @@ export const createCategory = async (req: Request, res: Response) => {
         }
         const category = new Category({ name, icon: iconUrl, products: products || [] });
         await category.save();
+        // Invalidate categories cache
+        await deleteCache(CATEGORIES_CACHE_KEY);
+        console.log("🗑️  Cache invalidated: categories:all (new category created)");
         res.status(201).json(new apiResponse(201, category, 'Category created successfully'));
     } catch (err: any) {
         res.status(500).json(new apiError(500, err.message));
     }
 };
 
-// Get all categories with products (aggregation)
+// Get all categories with products (aggregation) — with Redis Cache-Aside
 import  Product  from '../models/product.models.js';
 export const getCategories = async (req: Request, res: Response) => {
     try {
+        // 1. Check cache
+        const cached = await getCache(CATEGORIES_CACHE_KEY);
+        if (cached) {
+            console.log("🔵 Cache HIT: categories:all");
+            return res.status(200).json(new apiResponse(200, cached, 'Categories fetched (cached)'));
+        }
+        // 2. Cache MISS — fetch from DB
+        console.log("🟡 Cache MISS: categories:all — fetching from MongoDB");
         const categories = await Category.find();
-        // For each category, aggregate products
         const categoriesWithProducts = await Promise.all(categories.map(async (category) => {
-            // Find all products that have this category name in their categories array
             const products = await Product.find({ categories: { $in: [category.name] } });
             return { ...category.toObject(), products };
         }));
+        // 3. Store in Redis
+        await setCache(CATEGORIES_CACHE_KEY, categoriesWithProducts, CATEGORIES_CACHE_TTL);
         res.status(200).json(new apiResponse(200, categoriesWithProducts, 'Categories fetched successfully'));
     } catch (err: any) {
         res.status(500).json(new apiError(500, err.message));
@@ -78,6 +93,8 @@ export const updateCategory = async (req: Request, res: Response) => {
     try {
         const category = await Category.findByIdAndUpdate(req.params.id, req.body, { new: true }) as CategoryDocument;
         if (!category) return res.status(404).json(new apiError(404, 'Category not found'));
+        await deleteCache(CATEGORIES_CACHE_KEY);
+        console.log("🗑️  Cache invalidated: categories:all (category updated)");
         res.status(200).json(new apiResponse(200, category, 'Category updated successfully'));
     } catch (err: any) {
         res.status(500).json(new apiError(500, err.message));
@@ -89,8 +106,10 @@ export const deleteCategory = async (req: Request, res: Response) => {
     try {
         const category = await Category.findByIdAndDelete(req.params.id) as CategoryDocument;
         if (!category) return res.status(404).json(new apiError(404, 'Category not found'));
+        await deleteCache(CATEGORIES_CACHE_KEY);
+        console.log("🗑️  Cache invalidated: categories:all (category deleted)");
         res.status(200).json(new apiResponse(200, category, 'Category deleted successfully'));
     } catch (err: any) {
         res.status(500).json(new apiError(500, err.message));
     }
-}; 
+};

@@ -6,6 +6,11 @@ import { uploadOnCloudinary } from "../utils/cloudinary.js";
 import { Request, Response } from "express";
 import { Document } from "mongoose";
 import mongoose from "mongoose";
+import { getCache, setCache, deleteCache, deleteCachePattern } from "../utils/redis.js";
+
+const PRODUCTS_CACHE_KEY = "products:all";
+const PRODUCT_CACHE_TTL = 1800; // 30 min for individual products
+const PRODUCTS_CACHE_TTL = 3600; // 1 hour for all products
 
 interface IBrand {
     _id: mongoose.Types.ObjectId;
@@ -128,19 +133,44 @@ export const createProduct = asyncHandler(async (req: Request, res: Response) =>
         }));
     }
 
+    // Invalidate product list cache
+    await deleteCache(PRODUCTS_CACHE_KEY);
+    console.log("🗑️  Cache invalidated: products:all (new product created)");
+
     return res.status(201).json(new apiResponse(201, product, "Product created successfully"));
 });
 
-// Get all products
+// Get all products — with Redis Cache-Aside
 export const getProducts = asyncHandler(async (req: Request, res: Response) => {
+    // 1. Check cache
+    const cached = await getCache(PRODUCTS_CACHE_KEY);
+    if (cached) {
+        console.log("🔵 Cache HIT: products:all");
+        return res.status(200).json(new apiResponse(200, cached, "Products fetched (cached)"));
+    }
+    // 2. Cache MISS — fetch from DB
+    console.log("🟡 Cache MISS: products:all — fetching from MongoDB");
     const products = await Product.find().populate('brandId');
+    // 3. Store in Redis
+    await setCache(PRODUCTS_CACHE_KEY, products, PRODUCTS_CACHE_TTL);
     return res.status(200).json(new apiResponse(200, products, "Products fetched successfully"));
 });
 
-// Get a single product by ID
+// Get a single product by ID — with Redis Cache-Aside
 export const getProductById = asyncHandler(async (req: Request, res: Response) => {
+    const cacheKey = `product:${req.params.id}`;
+    // 1. Check cache
+    const cached = await getCache(cacheKey);
+    if (cached) {
+        console.log(`🔵 Cache HIT: ${cacheKey}`);
+        return res.status(200).json(new apiResponse(200, cached, "Product fetched (cached)"));
+    }
+    // 2. Cache MISS — fetch from DB
+    console.log(`🟡 Cache MISS: ${cacheKey} — fetching from MongoDB`);
     const product = await Product.findById(req.params.id).populate('brandId') as ProductDocument;
     if (!product) return res.status(404).json(new apiError(404, "Product not found"));
+    // 3. Store in Redis
+    await setCache(cacheKey, product, PRODUCT_CACHE_TTL);
     return res.status(200).json(new apiResponse(200, product, "Product fetched successfully"));
 });
 
@@ -197,6 +227,10 @@ export const updateProduct = asyncHandler(async (req: Request, res: Response) =>
 
     // Update the product
     const product = await Product.findByIdAndUpdate(productId, update, { new: true }) as ProductDocument;
+    // Invalidate both the list cache and the individual product cache
+    await deleteCache(PRODUCTS_CACHE_KEY);
+    await deleteCache(`product:${productId}`);
+    console.log(`🗑️  Cache invalidated: products:all + product:${productId} (product updated)`);
     return res.status(200).json(new apiResponse(200, product, "Product updated successfully"));
 });
 
@@ -228,8 +262,12 @@ export const deleteProduct = asyncHandler(async (req: Request, res: Response) =>
         }));
     }
 
+    // Invalidate both the list cache and the individual product cache
+    await deleteCache(PRODUCTS_CACHE_KEY);
+    await deleteCache(`product:${productId}`);
+    console.log(`🗑️  Cache invalidated: products:all + product:${productId} (product deleted)`);
     return res.status(200).json(new apiResponse(200, product, "Product deleted successfully"));
-}); 
+});
 
 
 // Add this function
